@@ -1,0 +1,849 @@
+library ieee;
+use ieee.std_logic_1164.all;
+
+
+entity keccak_sponge_round is 
+	port(compression_ena : in std_logic;
+		in_state : in std_logic_vector(0 to 1599);
+		iota_constant : in std_logic_vector(0 to 63);
+		out_state : out std_logic_vector(0 to 1599));
+end keccak_sponge_round;
+
+
+
+architecture arc of keccak_sponge_round is 
+	signal state_theta, state_rhoPi, state_chi : std_logic_vector(0 to 1599);
+	signal rhoPi_lanes : std_logic_vector(0 to 1625);
+	signal theta_c, theta_d, theta_lanes : std_logic_vector(0 to 319);
+ 
+	type router_type is array(0 to 24) of integer range 0 to 25;
+	constant theta_router : router_type := (0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 4, 4, 4, 4, 4);
+	constant Pi_router : router_type := (0, 10, 20, 5, 15, 16, 1, 11, 21, 6, 7, 17, 2, 12, 22, 23, 8, 18, 3, 13, 14, 24, 9, 19, 4);
+	constant rho_router : router_type := (0, 1, 62, 28, 27, 36, 44, 6, 55, 20, 3, 10, 43, 25, 39, 41, 45, 15, 21, 8, 18, 2, 61, 56, 14);
+	
+	begin 
+
+		---COMPACT FORM
+		--tmp_gen_00 : for i in 0 to 4 generate 
+			--tmp_theta_c(i*64 to i*64+63) <= in_state(i*64 to i*64+63) xor in_state(64*i+320 to i*64+383) xor in_state(i*64+640 to i*64+703) xor in_state(64*i+960 to 64*i+1023) xor in_state(64*i+1280 to 64*i+1343);
+		--end generate;
+		
+		---	EXPLICIT FORM 
+		theta_c(0 to 63) <= in_state(0 to 63) xor in_state(320 to 383) xor in_state(640 to 703) xor in_state(960 to 1023) xor in_state(1280 to 1343);
+		theta_c(64 to 127) <= in_state(64 to 127) xor in_state(384 to 447) xor in_state(704 to 767) xor in_state(1024 to 1087) xor in_state(1344 to 1407);
+		theta_c(128 to 191) <= in_state(128 to 191) xor in_state(448 to 511) xor in_state(768 to 831) xor in_state(1088 to 1151) xor in_state(1408 to 1471);
+		theta_c(192 to 255) <= in_state(192 to 255) xor in_state(512 to 575) xor in_state(832 to 895) xor in_state(1152 to 1215) xor in_state(1472 to 1535);
+		theta_c(256 to 319) <= in_state(256 to 319) xor in_state(576 to 639) xor in_state(896 to 959) xor in_state(1216 to 1279) xor in_state(1536 to 1599);
+
+
+		tmp_gen_01 : for i in 0 to 4 generate
+			theta_lanes(i*64 to i*64+63) <= theta_c(((i+1) mod 5)*64 to ((i+1) mod 5)*64 + 63);
+			theta_d(i*64 to i*64+63) <= theta_c(((i-1) mod 5)*64 to ((i-1) mod 5)*64 + 63) xor (theta_lanes(64*i+1 to 64*i+63) & theta_lanes(64*i));
+		end generate;
+		
+		
+		tmp_gen_02 : for i in 0 to 24 generate
+			state_theta(i*64 to i*64+63) <= (theta_d(theta_router(i)*64 to theta_router(i)*64+63) xor in_state(i*64 to i*64+63));
+		end generate;
+		
+		
+		-------------------------------------------------------------------------------------------------------------------------------------------
+		-------------------------------------------------------------------------------------------------------------------------------------------
+		
+		
+		gen_00 : for i in 0 to 24 generate 
+			rhoPi_lanes(i*65 to i*65+64) <= state_theta(i*64+rho_router(i) to i*64+63) & state_theta(i*64 to i*64+rho_router(i));
+			state_rhoPi(Pi_router(i)*64 to Pi_router(i)*64+63) <= rhoPi_lanes(i*64 to i*64+63);
+		end generate;
+		
+		
+		-------------------------------------------------------------------------------------------------------------------------------------------
+		-------------------------------------------------------------------------------------------------------------------------------------------
+
+
+		gen_01 : for i in 0 to 24 generate
+			state_chi(i*64 to i*64+63) <= state_rhoPi(i*64 to i*64+63) xor (not state_rhoPi(((i+1) mod 5)*64 to ((i+1) mod 5)*64+63) and state_rhoPi(((i+2) mod 5)*64 to ((i+2) mod 5)*64+63));
+		end generate;
+		
+		out_state <= (state_chi(0 to 63) xor iota_constant) & state_chi(64 to 1599) when(compression_ena = '1') else in_state;
+end;
+
+
+
+
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+
+
+library ieee;
+use ieee.std_logic_1164.all;
+
+
+entity state_reg is 
+		port(clk : in std_logic;
+			d_state : in std_logic_vector(0 to 1599);
+			q_state : out std_logic_vector(0 to 1599));
+end;
+
+
+architecture arc of state_reg is 
+	begin 
+		process(clk)
+			begin 
+				if(clk'event and clk = '1') then 
+					q_state <= d_state;
+				end if;
+		end process;
+end;
+
+
+
+
+library ieee;
+use ieee.std_logic_1164.all;
+
+
+entity merkle_reg is 
+		port(clk, wr_ena : in std_logic;
+			d_state : in std_logic_vector(0 to 255);
+			q_state : out std_logic_vector(0 to 255));
+end;
+
+
+architecture arc of merkle_reg is 
+	begin 
+		process(clk)
+			begin 
+				if(clk'event and clk = '1') then 
+					if(wr_ena = '1') then 
+						q_state <= d_state;
+					end if;
+				end if;
+		end process;
+end;
+
+
+
+library ieee;
+use ieee.std_logic_1164.all;
+
+
+entity concat_unit is 
+		port(clk, conc_ena : std_logic;
+			h1, h2 : std_logic_vector(0 to 255);
+			concat_out : out std_logic_vector(0 to 1599));
+end;
+
+
+architecture arc of concat_unit is 
+	begin 
+		process(clk)
+			begin
+				if(clk'event and clk = '1') then 
+					if(conc_ena = '0') then
+						concat_out <= (others => '0');
+					else concat_out <= h1 & h2 & (512 to 1599 => '0');
+					end if;
+				end if;
+		end process;
+end;
+
+
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+
+
+library ieee;
+use ieee.std_logic_1164.all;
+use ieee.numeric_std.all;
+
+
+
+entity sha_test is 
+	port(sha_clk, sync_reset : in std_logic;
+		out_state_deb : out std_logic_vector(0 to 5);
+		out_data : out std_logic_vector(0 to 255));
+end;
+
+
+
+architecture ar of sha_test is 
+	type fsm_state is (init, load_t1, load_t2, load_t3, load_t4, str_reg1, str_reg2, concat, str_tmp, load_concat, round1, round2, round3, round4, round5, round6, round7, round8, round9, round10, round11, round12, round13, round14, round15, round16, round17, round18, round19, round20, round21, round22, round23, round24, root);
+	signal pr_state, next_state : fsm_state;
+	signal t1_count, t2_count, t3_count, t4_count, tmp_count : unsigned(0 to 0);	
+	signal concat_count : unsigned(0 to 1);
+		
+		
+	signal in_state : std_logic_vector(0 to 1599) := (others => '0');
+	signal out_state, in_state_reg, out_state_reg, merkle_leaf : std_logic_vector(0 to 1599);
+	signal mreg2_out, mreg1_out, tmp_reg_out, h1 : std_logic_vector(0 to 255);
+	
+	signal round_constant : std_logic_vector(0 to 63);
+	signal out_ena, compression_ena, squeeze, mreg1_wr_ena, mreg2_wr_ena, tmpreg_wr_ena, conc_ena, tmp_Ctr : std_logic;
+	signal in_sel : std_logic_vector(0 to 1);
+	signal transition : unsigned(0 to 5);
+	signal trans_counter : unsigned(0 to 31);
+	
+	signal concat_out : std_logic_vector(0 to 1599);
+	
+	
+	component keccak_sponge_round is port(compression_ena : in std_logic; in_state : in std_logic_vector(0 to 1599); iota_constant : in std_logic_vector(0 to 63); 
+		out_state : out std_logic_vector(0 to 1599));
+	end component;
+	
+	component state_reg is port(clk : in std_logic; d_state : in std_logic_vector(0 to 1599);
+			q_state : out std_logic_vector(0 to 1599));
+	end component;
+	
+	component merkle_reg is port(clk, wr_ena : in std_logic; d_state : in std_logic_vector(0 to 255);
+			q_state : out std_logic_vector(0 to 255));
+	end component;
+
+	component concat_unit is port(clk, conc_ena : std_logic; h1, h2 : std_logic_vector(0 to 255); 
+		concat_out : out std_logic_vector(0 to 1599));
+	end component;
+	
+	begin 
+		process(sha_clk, sync_reset)
+			begin 
+				if(sync_reset = '1') then 
+					trans_counter <= (others => '0');
+				elsif(sha_clk'event and sha_clk = '1') then
+					if(pr_state = load_t1 or pr_state = load_t2 or pr_state = load_t3 or pr_state = load_t4) then 
+						if(trans_counter = "11111111111111111111111111111111") then 
+							trans_counter <= (others => '0');
+						else trans_counter <= trans_counter + 1;
+						end if;
+					end if;
+				end if;
+		end process;
+	
+			
+		process(sha_clk)
+			begin 
+				if(sha_clk'event and sha_clk = '1') then 
+					if(sync_reset = '1') then 
+						pr_state <= init;
+					else 
+						pr_state <= next_state;
+					end if;
+				end if;
+		end process;
+		
+		
+		
+		process(sha_clk)
+			begin 
+				if(sha_clk'event and sha_clk = '1') then 
+					case pr_state is 
+						when init =>
+							t1_count <= "0";
+							t2_count <= "0";
+							t3_count <= "0";
+							t4_count <= "0";
+							concat_count <= "00";
+						when load_t1 =>
+							t1_count <= t1_count + 1;
+						when load_t2 => 
+							t2_count <= t2_count + 1;
+						when load_t3 => 
+							t3_count <= t3_count + 1;
+						when load_t4 => 
+							t4_count <= t4_count + 1;
+						when concat => 
+							concat_count <= concat_count + 1;
+						when others => 
+							t1_count <= t1_count;
+							t2_count <= t2_count;
+							t3_count <= t3_count;
+							t4_count <= t4_count;
+							concat_count <= concat_count;
+					end case;
+					transition <= t1_count & t2_count & t3_count & t4_count & concat_count;
+				end if;
+		end process;
+		
+		
+		process(pr_state, squeeze, transition, t4_count, t2_count)
+			begin 
+				case pr_state is 
+					when init =>
+						squeeze <= '1';
+						in_sel <= "XX";
+						compression_ena <= '0';
+						round_constant <= (others => 'X');
+						out_ena <= '0';
+						mreg1_wr_ena <= '0';
+						mreg2_wr_ena <= '0';
+						tmpreg_wr_ena <= '0';
+						conc_ena <= '0';
+						tmp_Ctr <= '0';
+						next_state <= load_t1;
+							
+					when load_t1 => 		
+						squeeze <= '1';
+						in_sel <= "01";
+						compression_ena <= '0';
+						round_constant <= (others => 'X');
+						out_ena <= '0';
+						mreg1_wr_ena <= '0';
+						mreg2_wr_ena <= '0';
+						tmpreg_wr_ena <= '0';
+						conc_ena <= '0';
+						tmp_Ctr <= '0';
+						next_state <= round1;
+						
+					when load_t2 =>
+						squeeze <= '1';
+						in_sel <= "01";
+						compression_ena <= '0';
+						round_constant <= (others => 'X');
+						out_ena <= '0';
+						mreg1_wr_ena <= '0';
+						mreg2_wr_ena <= '0';
+						tmpreg_wr_ena <= '0';
+						conc_ena <= '0';
+						tmp_Ctr <= '0';
+						next_state <= round1;
+						
+					when load_t3 =>
+						squeeze <= '1';
+						in_sel <= "01";
+						compression_ena <= '0';
+						round_constant <= (others => 'X');
+						out_ena <= '0';
+						mreg1_wr_ena <= '0';
+						mreg2_wr_ena <= '0';
+						tmpreg_wr_ena <= '0';
+						conc_ena <= '0';
+						tmp_Ctr <= '0';
+						next_state <= round1;
+					
+					when load_t4 =>
+						squeeze <= '1';
+						in_sel <= "01";
+						compression_ena <= '0';
+						round_constant <= (others => 'X');
+						out_ena <= '0';
+						mreg1_wr_ena <= '0';
+						mreg2_wr_ena <= '0';
+						tmpreg_wr_ena <= '0';
+						conc_ena <= '0';
+						tmp_Ctr <= '0';
+						next_state <= round1;
+					
+					when concat => 
+						squeeze <= '1';
+						in_sel <= "00";
+						compression_ena <= '0';
+						round_constant <= (others => 'X');
+						out_ena <= '0';
+						mreg1_wr_ena <= '0';
+						mreg2_wr_ena <= '0';
+						tmpreg_wr_ena <= '0';
+						conc_ena <= '1';
+						if(t4_count > 0) then 
+							tmp_Ctr <= '1';
+						else tmp_Ctr <= '0';
+						end if;
+						next_state <= load_concat;
+						
+					when load_concat =>
+						squeeze <= '1';
+						in_sel <= "1X";
+						compression_ena <= '0';
+						round_constant <= (others => 'X');
+						out_ena <= '0';
+						mreg1_wr_ena <= '0';
+						mreg2_wr_ena <= '0';
+						tmpreg_wr_ena <= '0';
+						conc_ena <= '0';
+						tmp_Ctr <= '0';
+						next_state <= round1;
+					
+					when str_reg1 =>
+						squeeze <= '1';
+						in_sel <= "00";
+						compression_ena <= '0';
+						round_constant <= (others => 'X');
+						out_ena <= '0';
+						mreg1_wr_ena <= '1';
+						mreg2_wr_ena <= '0';
+						tmpreg_wr_ena <= '0';
+						conc_ena <= '0';
+						tmp_Ctr <= '0';
+						if(t2_count > 0) then 
+							next_state <= load_t4;
+						else next_state <= load_t2;
+						end if;
+					
+					when str_reg2 => 
+						squeeze <= '1';
+						in_sel <= "00";
+						compression_ena <= '0';
+						round_constant <= (others => 'X');
+						out_ena <= '0';
+						mreg1_wr_ena <= '0';
+						mreg2_wr_ena <= '1';
+						tmpreg_wr_ena <= '0';
+						conc_ena <= '0';
+						tmp_Ctr <= '0';
+						next_state <= concat;
+					
+					when str_tmp =>
+						squeeze <= '1';
+						in_sel <= "00";
+						compression_ena <= '0';
+						round_constant <= (others => 'X');
+						out_ena <= '0';
+						mreg1_wr_ena <= '0';
+						mreg2_wr_ena <= '0';
+						tmpreg_wr_ena <= '1'; 
+						conc_ena <= '0';
+						tmp_Ctr <= '0';
+						next_state <= load_t3;
+						
+					when round1 => 
+						squeeze <= '1';
+						in_sel <= "00";
+						compression_ena <= '1';
+						round_constant <= "0000000000000000000000000000000000000000000000000000000000000001";
+						out_ena <= '0';
+						mreg1_wr_ena <= '0';
+						mreg2_wr_ena <= '0';
+						tmpreg_wr_ena <= '0';
+						conc_ena <= '0';
+						tmp_Ctr <= '0';
+						next_state <= round2;
+					
+					when round2 => 
+						squeeze <= '1';
+						in_sel <= "00";
+						compression_ena <= '1';
+						round_constant <= "0000000000000000000000000000000000000000000000001000000010000010";
+						out_ena <= '0';
+						mreg1_wr_ena <= '0';
+						mreg2_wr_ena <= '0';
+						tmpreg_wr_ena <= '0';
+						conc_ena <= '0';
+						tmp_Ctr <= '0';
+						next_state <= round3;
+					
+					when round3 => 
+						squeeze <= '1';
+						in_sel <= "00";
+						compression_ena <= '1';
+						round_constant <= "1000000000000000000000000000000000000000000000001000000010001010";
+						out_ena <= '0';
+						mreg1_wr_ena <= '0';
+						mreg2_wr_ena <= '0';
+						tmpreg_wr_ena <= '0';
+						conc_ena <= '0';
+						tmp_Ctr <= '0';
+						next_state <= round4;
+					
+					when round4 => 
+						squeeze <= '1';
+						in_sel <= "00";
+						compression_ena <= '1';
+						round_constant <= "1000000000000000000000000000000010000000000000001000000000000000";
+						out_ena <= '0';
+						mreg1_wr_ena <= '0';
+						mreg2_wr_ena <= '0';
+						tmpreg_wr_ena <= '0';
+						conc_ena <= '0';
+						tmp_Ctr <= '0';
+						next_state <= round5;
+					
+					when round5 => 
+						squeeze <= '1';
+						in_sel <= "00";
+						compression_ena <= '1';
+						round_constant <= "0000000000000000000000000000000000000000000000001000000010001011";
+						out_ena <= '0';
+						mreg1_wr_ena <= '0';
+						mreg2_wr_ena <= '0';
+						tmpreg_wr_ena <= '0';
+						conc_ena <= '0';
+						tmp_Ctr <= '0';
+						next_state <= round6;
+					
+					when round6 => 
+						squeeze <= '1';
+						in_sel <= "00";
+						compression_ena <= '1';
+						round_constant <= "0000000000000000000000000000000010000000000000000000000000000001";
+						out_ena <= '0';
+						mreg1_wr_ena <= '0';
+						mreg2_wr_ena <= '0';
+						tmpreg_wr_ena <= '0';
+						conc_ena <= '0';
+						tmp_Ctr <= '0';
+						next_state <= round7;
+					
+					when round7 => 
+						squeeze <= '1';
+						in_sel <= "00";
+						compression_ena <= '1';
+						round_constant <= "1000000000000000000000000000000010000000000000001000000010000001";
+						out_ena <= '0';
+						mreg1_wr_ena <= '0';
+						mreg2_wr_ena <= '0';
+						tmpreg_wr_ena <= '0';
+						conc_ena <= '0';
+						tmp_Ctr <= '0';
+						next_state <= round8;
+					
+					when round8 => 
+						squeeze <= '1';
+						in_sel <= "00";
+						compression_ena <= '1';
+						round_constant <= "1000000000000000000000000000000000000000000000001000000000001001";
+						out_ena <= '0';
+						mreg1_wr_ena <= '0';
+						mreg2_wr_ena <= '0';
+						tmpreg_wr_ena <= '0';
+						conc_ena <= '0';
+						tmp_Ctr <= '0';
+						next_state <= round9;
+					
+					when round9 => 
+						squeeze <= '1';
+						in_sel <= "00";
+						compression_ena <= '1';
+						round_constant <= "0000000000000000000000000000000000000000000000000000000010001010";
+						out_ena <= '0';
+						mreg1_wr_ena <= '0';
+						mreg2_wr_ena <= '0';
+						tmpreg_wr_ena <= '0';
+						conc_ena <= '0';
+						tmp_Ctr <= '0';
+						next_state <= round10;
+					
+					when round10 => 
+						squeeze <= '1';
+						in_sel <= "00";
+						compression_ena <= '1';
+						round_constant <= "0000000000000000000000000000000000000000000000000000000010001000";
+						out_ena <= '0';
+						mreg1_wr_ena <= '0';
+						mreg2_wr_ena <= '0';
+						tmpreg_wr_ena <= '0';
+						conc_ena <= '0';
+						tmp_Ctr <= '0';
+						next_state <= round11;
+					
+					when round11 => 
+						squeeze <= '1';
+						in_sel <= "00";
+						compression_ena <= '1';
+						round_constant <= "0000000000000000000000000000000010000000000000001000000000001001";
+						out_ena <= '0';
+						mreg1_wr_ena <= '0';
+						mreg2_wr_ena <= '0';
+						tmpreg_wr_ena <= '0';
+						conc_ena <= '0';
+						tmp_Ctr <= '0';
+						next_state <= round12;
+					
+					when round12 => 
+						squeeze <= '1';
+						in_sel <= "00";
+						compression_ena <= '1';
+						round_constant <= "0000000000000000000000000000000010000000000000000000000000001010";
+						out_ena <= '0';
+						mreg1_wr_ena <= '0';
+						mreg2_wr_ena <= '0';
+						tmpreg_wr_ena <= '0';
+						conc_ena <= '0';
+						tmp_Ctr <= '0';
+						next_state <= round13;
+					
+					when round13 => 
+						squeeze <= '1';
+						in_sel <= "00";
+						compression_ena <= '1';
+						round_constant <= "0000000000000000000000000000000010000000000000001000000010001011";
+						out_ena <= '0';
+						mreg1_wr_ena <= '0';
+						mreg2_wr_ena <= '0';
+						tmpreg_wr_ena <= '0';
+						conc_ena <= '0';
+						tmp_Ctr <= '0';
+						next_state <= round14;
+					
+					when round14 => 
+						squeeze <= '1';
+						in_sel <= "00";
+						compression_ena <= '1';
+						round_constant <= "1000000000000000000000000000000000000000000000000000000010001011";
+						out_ena <= '0';
+						mreg1_wr_ena <= '0';
+						mreg2_wr_ena <= '0';
+						tmpreg_wr_ena <= '0';
+						conc_ena <= '0';
+						tmp_Ctr <= '0';
+						next_state <= round15;
+					
+					when round15 => 
+						squeeze <= '1';
+						in_sel <= "00";
+						compression_ena <= '1';
+						round_constant <= "1000000000000000000000000000000000000000000000001000000010001001";
+						out_ena <= '0';
+						mreg1_wr_ena <= '0';
+						mreg2_wr_ena <= '0';
+						tmpreg_wr_ena <= '0';
+						conc_ena <= '0';
+						tmp_Ctr <= '0';
+						next_state <= round16;
+					
+					when round16 => 
+						squeeze <= '1';
+						in_sel <= "00";
+						compression_ena <= '1';
+						round_constant <= "1000000000000000000000000000000000000000000000001000000000000011";
+						out_ena <= '0';
+						mreg1_wr_ena <= '0';
+						mreg2_wr_ena <= '0';
+						tmpreg_wr_ena <= '0';
+						conc_ena <= '0';
+						tmp_Ctr <= '0';
+						next_state <= round17;
+					
+					when round17 => 
+						squeeze <= '1';
+						in_sel <= "00";
+						compression_ena <= '1';
+						round_constant <= "1000000000000000000000000000000000000000000000001000000000000010";
+						out_ena <= '0';
+						mreg1_wr_ena <= '0';
+						mreg2_wr_ena <= '0';
+						tmpreg_wr_ena <= '0';
+						conc_ena <= '0';
+						tmp_Ctr <= '0';
+						next_state <= round18;
+					
+					when round18 => 
+						squeeze <= '1';
+						in_sel <= "00";
+						compression_ena <= '1';
+						round_constant <= "1000000000000000000000000000000000000000000000000000000010000000";
+						out_ena <= '0';
+						mreg1_wr_ena <= '0';
+						mreg2_wr_ena <= '0';
+						tmpreg_wr_ena <= '0';
+						conc_ena <= '0';
+						tmp_Ctr <= '0';
+						next_state <= round19;
+					
+					when round19 => 
+						squeeze <= '1';
+						in_sel <= "00";
+						compression_ena <= '1';
+						round_constant <= "0000000000000000000000000000000000000000000000001000000000001010";
+						out_ena <= '0';
+						mreg1_wr_ena <= '0';
+						mreg2_wr_ena <= '0';
+						tmpreg_wr_ena <= '0';
+						conc_ena <= '0';
+						tmp_Ctr <= '0';
+						next_state <= round20;
+					
+					when round20 => 
+						squeeze <= '1';
+						in_sel <= "00";
+						compression_ena <= '1';
+						round_constant <= "1000000000000000000000000000000010000000000000000000000000001010";
+						out_ena <= '0';
+						mreg1_wr_ena <= '0';
+						mreg2_wr_ena <= '0';
+						tmpreg_wr_ena <= '0';
+						conc_ena <= '0';
+						tmp_Ctr <= '0';
+						next_state <= round21;
+					
+					when round21 => 
+						squeeze <= '1';
+						in_sel <= "00";
+						compression_ena <= '1';
+						round_constant <= "1000000000000000000000000000000010000000000000001000000010000001";
+						out_ena <= '0';
+						mreg1_wr_ena <= '0';
+						mreg2_wr_ena <= '0';
+						tmpreg_wr_ena <= '0';
+						conc_ena <= '0';
+						tmp_Ctr <= '0';
+						next_state <= round22;
+					
+					when round22 => 
+						squeeze <= '1';
+						in_sel <= "00";
+						compression_ena <= '1';
+						round_constant <= "1000000000000000000000000000000000000000000000001000000010000000";
+						out_ena <= '0';
+						mreg1_wr_ena <= '0';
+						mreg2_wr_ena <= '0';
+						tmpreg_wr_ena <= '0';
+						conc_ena <= '0';
+						tmp_Ctr <= '0';
+						next_state <= round23;
+					
+					when round23 => 
+						squeeze <= '1';
+						in_sel <= "00";
+						compression_ena <= '1';
+						round_constant <= "0000000000000000000000000000000010000000000000000000000000000001";
+						out_ena <= '0';
+						mreg1_wr_ena <= '0';
+						mreg2_wr_ena <= '0';
+						tmpreg_wr_ena <= '0';
+						conc_ena <= '0';
+						tmp_Ctr <= '0';
+						next_state <= round24;
+					
+					when round24 => 
+						compression_ena <= '1';
+						in_sel <= "00";
+						round_constant <= "1000000000000000000000000000000010000000000000001000000000001000";
+						out_ena <= '0';
+						mreg1_wr_ena <= '0';
+						mreg2_wr_ena <= '0';
+						tmpreg_wr_ena <= '0';
+						conc_ena <= '0';
+						tmp_Ctr <= '0';
+						 
+						squeeze <= '0';
+						case transition is 
+							when "100000" | "111001" => 
+								next_state <= str_reg1;
+							when "110000" | "111101" | "111110" => 
+								next_state <= str_reg2;
+							when "110001" => 
+								next_state <= str_tmp;
+							when "111111" => 
+								next_state <= root;
+							when others => 
+								next_state <= init;
+						end case;
+						
+					when root => 
+						squeeze <= '1';
+						in_sel <= "XX";
+						compression_ena <= '0';
+						round_constant <= (others => 'X');
+						out_ena <= '1';
+						mreg1_wr_ena <= '0';
+						mreg2_wr_ena <= '0';
+						tmpreg_wr_ena <= '0';
+						conc_ena <= '0';
+						tmp_Ctr <= '0';
+						next_state <= init;
+				end case;
+		end process;
+		
+		process(sha_clk)
+			begin 
+			if(sha_clk'event and sha_clk = '1') then 
+			case pr_state is 
+				when round1 => 
+						out_state_deb <= "000001";
+				when round2 => 
+						out_state_deb <= "000010";
+				when round3 => 
+						out_state_deb <= "000011";
+				when round4 => 
+						out_state_deb <= "000100";
+				when round5 => 
+						out_state_deb <= "000101";
+				when round6 => 
+						out_state_deb <= "000110";
+				when round7 => 
+						out_state_deb <= "000111";
+				when round8 => 
+						out_state_deb <= "001000";
+				when round9 => 
+						out_state_deb <= "001001";
+				when round10 => 
+						out_state_deb <= "001010";
+				when round11 => 
+						out_state_deb <= "001011";
+				when round12 => 
+						out_state_deb <= "001100";
+				when round13 => 
+						out_state_deb <= "001101";
+				when round14 => 
+						out_state_deb <= "001110";
+				when round15 => 
+						out_state_deb <= "001111";
+				when round16 => 
+						out_state_deb <= "010000";
+				when round17 => 
+						out_state_deb <= "010001";
+				when round18 => 
+						out_state_deb <= "010010";
+				when round19 => 
+						out_state_deb <= "010011";
+				when round20 => 
+						out_state_deb <= "010100";
+				when round21 => 
+						out_state_deb <= "010101";
+				when round22 => 
+						out_state_deb <= "010110";
+				when round23 => 
+						out_state_deb <= "010111";
+				when round24 => 
+						out_state_deb <= "011000";	
+				when root => 
+						out_state_deb <= "111111";
+				when load_t1 =>
+						out_state_deb <= "011001";
+				when load_t2 =>
+						out_state_deb <= "011010";
+				when load_t3 => 
+						out_state_deb <= "011011";
+				when load_t4 => 
+						out_state_deb <= "011100";
+				when str_reg1 => 
+						out_state_deb <= "011101";
+				when str_reg2 => 
+						out_state_deb <= "011110";
+				when str_tmp =>
+						out_state_deb <= "011111";
+				when concat => 
+						out_state_deb <= "100000";
+				when load_concat => 
+						out_state_deb <= "100001";
+				when init => 
+						out_state_deb <= "111110";
+			end case;
+			end if;
+		end process;
+			
+			
+		merkle_leaf <= std_logic_vector(trans_counter) & (32 to 1599 => '0'); 
+		
+		
+		mreg_1 : merkle_reg port map(sha_clk, mreg1_wr_ena, out_state(0 to 255), mreg1_out);
+		mreg_2 : merkle_reg port map(sha_clk, mreg2_wr_ena, out_state(0 to 255), mreg2_out);
+		tmp_reg : merkle_reg port map(sha_clk, tmpreg_wr_ena, out_state(0 to 255), tmp_reg_out);
+		
+		h1 <= mreg1_out(0 to 255) when(tmp_Ctr = '0') else tmp_reg_out;
+
+		
+		con : concat_unit port map(sha_clk, conc_ena, h1, mreg2_out, concat_out);
+		
+		with in_sel select
+			in_state <= out_state_reg when "00",
+						merkle_leaf when "01",
+						concat_out when others;
+		
+		
+		reg_upper : state_reg port map(sha_clk, in_state, in_state_reg);
+		
+		c : keccak_sponge_round port map(compression_ena, in_state_reg, round_constant, out_state);
+		
+		reg_lower : state_reg port map(sha_clk, out_state, out_state_reg);
+		
+		out_data <= out_state_reg(0 to 255) when(out_ena = '1') else (others => 'Z');
+end;

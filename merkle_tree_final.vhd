@@ -1,0 +1,1095 @@
+library ieee;
+use ieee.std_logic_1164.all;
+
+
+
+entity keccak_sponge_round is 
+	port(compression_ena : in std_logic;
+		in_state : in std_logic_vector(0 to 1599);
+		iota_constant : in std_logic_vector(0 to 63);
+		out_state : out std_logic_vector(0 to 1599));
+end keccak_sponge_round;
+
+
+
+
+architecture arc of keccak_sponge_round is 
+	signal state_theta, state_rhoPi, state_chi : std_logic_vector(0 to 1599);
+	signal rhoPi_lanes : std_logic_vector(0 to 1625);
+	signal theta_c, theta_d, theta_lanes : std_logic_vector(0 to 319);
+ 
+	type router_type is array(0 to 24) of integer range 0 to 25;
+	constant theta_router : router_type := (0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 4, 4, 4, 4, 4);
+	constant Pi_router : router_type := (0, 10, 20, 5, 15, 16, 1, 11, 21, 6, 7, 17, 2, 12, 22, 23, 8, 18, 3, 13, 14, 24, 9, 19, 4);
+	constant rho_router : router_type := (0, 1, 62, 28, 27, 36, 44, 6, 55, 20, 3, 10, 43, 25, 39, 41, 45, 15, 21, 8, 18, 2, 61, 56, 14);
+	
+	begin 
+
+		---COMPACT FORM
+		--tmp_gen_00 : for i in 0 to 4 generate 
+			--tmp_theta_c(i*64 to i*64+63) <= in_state(i*64 to i*64+63) xor in_state(64*i+320 to i*64+383) xor in_state(i*64+640 to i*64+703) xor in_state(64*i+960 to 64*i+1023) xor in_state(64*i+1280 to 64*i+1343);
+		--end generate;
+		
+		---	EXPLICIT FORM 
+		
+		
+		theta_c(0 to 63) <= in_state(0 to 63) xor in_state(320 to 383) xor in_state(640 to 703) xor in_state(960 to 1023) xor in_state(1280 to 1343);
+		theta_c(64 to 127) <= in_state(64 to 127) xor in_state(384 to 447) xor in_state(704 to 767) xor in_state(1024 to 1087) xor in_state(1344 to 1407);
+		theta_c(128 to 191) <= in_state(128 to 191) xor in_state(448 to 511) xor in_state(768 to 831) xor in_state(1088 to 1151) xor in_state(1408 to 1471);
+		theta_c(192 to 255) <= in_state(192 to 255) xor in_state(512 to 575) xor in_state(832 to 895) xor in_state(1152 to 1215) xor in_state(1472 to 1535);
+		theta_c(256 to 319) <= in_state(256 to 319) xor in_state(576 to 639) xor in_state(896 to 959) xor in_state(1216 to 1279) xor in_state(1536 to 1599);
+
+
+		tmp_gen_01 : for i in 0 to 4 generate
+			theta_lanes(i*64 to i*64+63) <= theta_c(((i+1) mod 5)*64 to ((i+1) mod 5)*64 + 63);
+			theta_d(i*64 to i*64+63) <= theta_c(((i-1) mod 5)*64 to ((i-1) mod 5)*64 + 63) xor (theta_lanes(64*i+1 to 64*i+63) & theta_lanes(64*i));
+		end generate;
+		
+		
+		tmp_gen_02 : for i in 0 to 24 generate
+			state_theta(i*64 to i*64+63) <= (theta_d(theta_router(i)*64 to theta_router(i)*64+63) xor in_state(i*64 to i*64+63));
+		end generate;
+		
+		
+		-------------------------------------------------------------------------------------------------------------------------------------------
+		-------------------------------------------------------------------------------------------------------------------------------------------
+		
+		
+		gen_00 : for i in 0 to 24 generate 
+			rhoPi_lanes(i*65 to i*65+64) <= state_theta(i*64+rho_router(i) to i*64+63) & state_theta(i*64 to i*64+rho_router(i));
+			state_rhoPi(Pi_router(i)*64 to Pi_router(i)*64+63) <= rhoPi_lanes(i*64 to i*64+63);
+		end generate;
+		
+		
+		-------------------------------------------------------------------------------------------------------------------------------------------
+		-------------------------------------------------------------------------------------------------------------------------------------------
+
+
+		gen_01 : for i in 0 to 24 generate
+			state_chi(i*64 to i*64+63) <= state_rhoPi(i*64 to i*64+63) xor (not state_rhoPi(((i+1) mod 5)*64 to ((i+1) mod 5)*64+63) and state_rhoPi(((i+2) mod 5)*64 to ((i+2) mod 5)*64+63));
+		end generate;
+		
+		out_state <= (state_chi(0 to 63) xor iota_constant) & state_chi(64 to 1599) when(compression_ena = '1') else in_state;
+end;
+
+
+
+
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+
+
+
+library ieee;
+use ieee.std_logic_1164.all;
+
+
+
+entity state_reg is 
+		port(clk : in std_logic;
+			d_state : in std_logic_vector(0 to 1599);
+			q_state : out std_logic_vector(0 to 1599));
+end;
+
+
+architecture arc of state_reg is 
+	begin 
+		process(clk)
+			begin 
+				if(clk'event and clk = '1') then 
+					q_state <= d_state;
+				end if;
+		end process;
+end;
+
+
+
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+
+
+
+
+library ieee;
+use ieee.std_logic_1164.all;
+
+
+entity merkle_reg is 
+		port(clk, wr_ena : in std_logic;
+			d_state : in std_logic_vector(0 to 255);
+			q_state : out std_logic_vector(0 to 255));
+end;
+
+
+architecture arc of merkle_reg is 
+	begin 
+		process(clk)
+			begin 
+				if(clk'event and clk = '1') then 
+					if(wr_ena = '1') then 
+						q_state <= d_state;
+					end if;
+				end if;
+		end process;
+end;
+
+
+
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+
+
+library ieee;
+use ieee.std_logic_1164.all;
+
+
+entity concat_unit is 
+		port(clk, conc_ena : std_logic;
+			h1, h2 : std_logic_vector(0 to 255);
+			concat_out : out std_logic_vector(0 to 1599));
+end;
+
+
+architecture arc of concat_unit is 
+	begin 
+		process(clk)
+			begin
+				if(clk'event and clk = '1') then 
+					if(conc_ena = '0') then
+						concat_out <= (others => '0');
+					else concat_out <= h1 & h2 & (512 => '1', 513 to 1599 => '0');
+					end if;
+				end if;
+		end process;
+end;
+
+
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+
+library ieee;
+use ieee.std_logic_1164.all;
+
+
+
+entity lcd_decoder is 
+		port(in_block : in std_logic_vector(0 to 3);
+		lcd_encode : out std_logic_vector(0 to 7));
+end;
+
+
+architecture ar of lcd_decoder is 
+	begin  	
+		with in_block select 
+			lcd_encode <= "00110000" when "0000", --0
+						  "00110001" when "0001", --1
+						  "00110010" when "0010", --2
+						  "00110011" when "0011", --3
+						  "00110100" when "0100", --4
+						  "00110101" when "0101", --5
+						  "00110110" when "0110", --6
+						  "00110111" when "0111", --7
+						  "00111000" when "1000", --8
+						  "00111001" when "1001", --9
+						  "01100001" when "1010", --A
+						  "01100010" when "1011", --B
+						  "01100011" when "1100", --C
+						  "01100100" when "1101", --D
+						  "01100101" when "1110", --E
+						  "01100110" when "1111"; --F
+end;
+
+
+
+
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+
+
+library ieee;
+use ieee.std_logic_1164.all;
+use ieee.numeric_std.all;
+
+
+entity merkle_tree_final is 
+	port(clk, sync_reset, reset, is_lcd_on, pause, show_lcd : in std_logic;
+		 E : buffer std_logic;
+		 LCD_ON : out std_logic;
+		 outp : out std_logic_vector(0 to 25);
+		 hex_0, hex_1, hex_2, hex_3 : out std_logic_vector(6 downto 0);
+		 db : out std_logic_vector(9 downto 0));
+end;
+
+
+
+
+architecture ar of merkle_tree_final is 
+	type fsm_state is (init, load_t1, load_t2, load_t3, load_t4, str_reg1, str_reg2, concat, str_tmp, load_concat, round1, round2, round3, round4, round5, round6, round7, round8, round9, round10, round11, round12, round13, round14, round15, round16, round17, round18, round19, round20, round21, round22, round23, round24, root);
+	signal pr_state, next_state : fsm_state;
+	
+	type state_lcd is (function_set, clear, display_ctrl, entry_mode, write_data, shift, write_init0, write_init1, write_init2, write_init3, write_init4, write_init5, write_init6, write_init7, write_init8, write_init9, write_init10, write_init11);
+	signal pr_state_lcd, next_state_lcd : state_lcd;
+
+
+	signal lcd_counter : unsigned(7 downto 0);
+	signal root_counter : unsigned(15 downto 0);
+	signal t1_count, t2_count, t3_count, t4_count, tmp_count : unsigned(0 to 0);	
+	signal concat_count : unsigned(0 to 1);
+		
+		
+	signal in_state : std_logic_vector(0 to 1599) := (others => '0');
+	signal out_state, in_state_reg, out_state_reg, merkle_leaf : std_logic_vector(0 to 1599);
+	signal mreg2_out, mreg1_out, tmp_reg_out, h1 : std_logic_vector(0 to 255);
+	
+	signal round_constant : std_logic_vector(0 to 63);
+	signal out_ena, compression_ena, squeeze, mreg1_wr_ena, mreg2_wr_ena, tmpreg_wr_ena, conc_ena, tmp_Ctr : std_logic;
+
+	signal in_sel : std_logic_vector(0 to 1);
+	signal transition : unsigned(0 to 5);
+	signal trans_counter : unsigned(0 to 31);
+	
+	signal concat_out : std_logic_vector(0 to 1599);
+
+	signal sha_clk : std_logic;
+	signal digest, digest_reg : std_logic_vector(0 to 255);
+	signal decoded_lcd, decoded_lcd_fifo : std_logic_vector(0 to 511);
+	
+	component keccak_sponge_round is port(compression_ena : in std_logic; in_state : in std_logic_vector(0 to 1599); iota_constant : in std_logic_vector(0 to 63); 
+		out_state : out std_logic_vector(0 to 1599));
+	end component;
+	
+	component state_reg is port(clk : in std_logic; d_state : in std_logic_vector(0 to 1599);
+			q_state : out std_logic_vector(0 to 1599));
+	end component;
+	
+	component merkle_reg is port(clk, wr_ena : in std_logic; d_state : in std_logic_vector(0 to 255);
+			q_state : out std_logic_vector(0 to 255));
+	end component;
+
+	component concat_unit is port(clk, conc_ena : std_logic; h1, h2 : std_logic_vector(0 to 255); 
+		concat_out : out std_logic_vector(0 to 1599));
+	end component;
+	
+	component lcd_decoder is port(in_block : in std_logic_vector(0 to 3); lcd_encode : out std_logic_vector(0 to 7));
+	end component;
+
+	begin 
+		process(sha_clk, sync_reset)
+			begin 
+				if(sync_reset = '1') then 
+					trans_counter <= (others => '0');
+				elsif(sha_clk'event and sha_clk = '1') then
+					if(pr_state = load_t1 or pr_state = load_t2 or pr_state = load_t3 or pr_state = load_t4) then 
+						if(trans_counter = "11111111111111111111111111111111") then 
+							trans_counter <= (others => '0');
+						else trans_counter <= trans_counter + 1;
+						end if;
+					end if;
+				end if;
+		end process;
+	
+			
+		process(sha_clk)
+			begin 
+				if(sha_clk'event and sha_clk = '1') then 
+					if(sync_reset = '1') then 
+						pr_state <= init;
+					else 
+						pr_state <= next_state;
+					end if;
+				end if;
+		end process;
+		
+		
+		
+		process(sha_clk)
+			begin 
+				if(sha_clk'event and sha_clk = '1') then 
+					case pr_state is 
+						when init =>
+							t1_count <= "0";
+							t2_count <= "0";
+							t3_count <= "0";
+							t4_count <= "0";
+							concat_count <= "00";
+						when load_t1 =>
+							t1_count <= t1_count + 1;
+						when load_t2 => 
+							t2_count <= t2_count + 1;
+						when load_t3 => 
+							t3_count <= t3_count + 1;
+						when load_t4 => 
+							t4_count <= t4_count + 1;
+						when concat => 
+							concat_count <= concat_count + 1;
+						when others => 
+							t1_count <= t1_count;
+							t2_count <= t2_count;
+							t3_count <= t3_count;
+							t4_count <= t4_count;
+							concat_count <= concat_count;
+					end case;
+					transition <= t1_count & t2_count & t3_count & t4_count & concat_count;
+				end if;
+		end process;
+		
+		
+		process(pr_state, squeeze, transition, t4_count, t2_count)
+			begin 
+				case pr_state is 
+					when init =>
+						in_sel <= "XX";
+						compression_ena <= '0';
+						round_constant <= (others => 'X');
+						out_ena <= '0';
+						mreg1_wr_ena <= '0';
+						mreg2_wr_ena <= '0';
+						tmpreg_wr_ena <= '0';
+						conc_ena <= '0';
+						tmp_Ctr <= '0';
+						next_state <= load_t1;
+							
+					when load_t1 => 		
+						in_sel <= "01";
+						compression_ena <= '0';
+						round_constant <= (others => 'X');
+						out_ena <= '0';
+						mreg1_wr_ena <= '0';
+						mreg2_wr_ena <= '0';
+						tmpreg_wr_ena <= '0';
+						conc_ena <= '0';
+						tmp_Ctr <= '0';
+						next_state <= round1;
+						
+					when load_t2 =>
+						in_sel <= "01";
+						compression_ena <= '0';
+						round_constant <= (others => 'X');
+						out_ena <= '0';
+						mreg1_wr_ena <= '0';
+						mreg2_wr_ena <= '0';
+						tmpreg_wr_ena <= '0';
+						conc_ena <= '0';
+						tmp_Ctr <= '0';
+						next_state <= round1;
+						
+					when load_t3 =>
+						in_sel <= "01";
+						compression_ena <= '0';
+						round_constant <= (others => 'X');
+						out_ena <= '0';
+						mreg1_wr_ena <= '0';
+						mreg2_wr_ena <= '0';
+						tmpreg_wr_ena <= '0';
+						conc_ena <= '0';
+						tmp_Ctr <= '0';
+						next_state <= round1;
+					
+					when load_t4 =>
+						in_sel <= "01";
+						compression_ena <= '0';
+						round_constant <= (others => 'X');
+						out_ena <= '0';
+						mreg1_wr_ena <= '0';
+						mreg2_wr_ena <= '0';
+						tmpreg_wr_ena <= '0';
+						conc_ena <= '0';
+						tmp_Ctr <= '0';
+						next_state <= round1;
+					
+					when concat => 
+						in_sel <= "00";
+						compression_ena <= '0';
+						round_constant <= (others => 'X');
+						out_ena <= '0';
+						mreg1_wr_ena <= '0';
+						mreg2_wr_ena <= '0';
+						tmpreg_wr_ena <= '0';
+						conc_ena <= '1';
+						if(t4_count > 0) then 
+							tmp_Ctr <= '1';
+						else tmp_Ctr <= '0';
+						end if;
+						next_state <= load_concat;
+						
+					when load_concat =>
+						in_sel <= "1X";
+						compression_ena <= '0';
+						round_constant <= (others => 'X');
+						out_ena <= '0';
+						mreg1_wr_ena <= '0';
+						mreg2_wr_ena <= '0';
+						tmpreg_wr_ena <= '0';
+						conc_ena <= '0';
+						tmp_Ctr <= '0';
+						next_state <= round1;
+					
+					when str_reg1 =>
+						in_sel <= "00";
+						compression_ena <= '0';
+						round_constant <= (others => 'X');
+						out_ena <= '0';
+						mreg1_wr_ena <= '1';
+						mreg2_wr_ena <= '0';
+						tmpreg_wr_ena <= '0';
+						conc_ena <= '0';
+						tmp_Ctr <= '0';
+						if(t2_count > 0) then 
+							next_state <= load_t4;
+						else next_state <= load_t2;
+						end if;
+					
+					when str_reg2 => 
+						in_sel <= "00";
+						compression_ena <= '0';
+						round_constant <= (others => 'X');
+						out_ena <= '0';
+						mreg1_wr_ena <= '0';
+						mreg2_wr_ena <= '1';
+						tmpreg_wr_ena <= '0';
+						conc_ena <= '0';
+						tmp_Ctr <= '0';
+						next_state <= concat;
+					
+					when str_tmp =>
+						in_sel <= "00";
+						compression_ena <= '0';
+						round_constant <= (others => 'X');
+						out_ena <= '0';
+						mreg1_wr_ena <= '0';
+						mreg2_wr_ena <= '0';
+						tmpreg_wr_ena <= '1'; 
+						conc_ena <= '0';
+						tmp_Ctr <= '0';
+						next_state <= load_t3;
+						
+					when round1 => 
+						in_sel <= "00";
+						compression_ena <= '1';
+						round_constant <= "0000000000000000000000000000000000000000000000000000000000000001";
+						out_ena <= '0';
+						mreg1_wr_ena <= '0';
+						mreg2_wr_ena <= '0';
+						tmpreg_wr_ena <= '0';
+						conc_ena <= '0';
+						tmp_Ctr <= '0';
+						next_state <= round2;
+					
+					when round2 => 
+						in_sel <= "00";
+						compression_ena <= '1';
+						round_constant <= "0000000000000000000000000000000000000000000000001000000010000010";
+						out_ena <= '0';
+						mreg1_wr_ena <= '0';
+						mreg2_wr_ena <= '0';
+						tmpreg_wr_ena <= '0';
+						conc_ena <= '0';
+						tmp_Ctr <= '0';
+						next_state <= round3;
+					
+					when round3 => 
+						in_sel <= "00";
+						compression_ena <= '1';
+						round_constant <= "1000000000000000000000000000000000000000000000001000000010001010";
+						out_ena <= '0';
+						mreg1_wr_ena <= '0';
+						mreg2_wr_ena <= '0';
+						tmpreg_wr_ena <= '0';
+						conc_ena <= '0';
+						tmp_Ctr <= '0';
+						next_state <= round4;
+					
+					when round4 => 
+						in_sel <= "00";
+						compression_ena <= '1';
+						round_constant <= "1000000000000000000000000000000010000000000000001000000000000000";
+						out_ena <= '0';
+						mreg1_wr_ena <= '0';
+						mreg2_wr_ena <= '0';
+						tmpreg_wr_ena <= '0';
+						conc_ena <= '0';
+						tmp_Ctr <= '0';
+						next_state <= round5;
+					
+					when round5 => 
+						in_sel <= "00";
+						compression_ena <= '1';
+						round_constant <= "0000000000000000000000000000000000000000000000001000000010001011";
+						out_ena <= '0';
+						mreg1_wr_ena <= '0';
+						mreg2_wr_ena <= '0';
+						tmpreg_wr_ena <= '0';
+						conc_ena <= '0';
+						tmp_Ctr <= '0';
+						next_state <= round6;
+					
+					when round6 => 
+						in_sel <= "00";
+						compression_ena <= '1';
+						round_constant <= "0000000000000000000000000000000010000000000000000000000000000001";
+						out_ena <= '0';
+						mreg1_wr_ena <= '0';
+						mreg2_wr_ena <= '0';
+						tmpreg_wr_ena <= '0';
+						conc_ena <= '0';
+						tmp_Ctr <= '0';
+						next_state <= round7;
+					
+					when round7 => 
+						in_sel <= "00";
+						compression_ena <= '1';
+						round_constant <= "1000000000000000000000000000000010000000000000001000000010000001";
+						out_ena <= '0';
+						mreg1_wr_ena <= '0';
+						mreg2_wr_ena <= '0';
+						tmpreg_wr_ena <= '0';
+						conc_ena <= '0';
+						tmp_Ctr <= '0';
+						next_state <= round8;
+					
+					when round8 => 
+						in_sel <= "00";
+						compression_ena <= '1';
+						round_constant <= "1000000000000000000000000000000000000000000000001000000000001001";
+						out_ena <= '0';
+						mreg1_wr_ena <= '0';
+						mreg2_wr_ena <= '0';
+						tmpreg_wr_ena <= '0';
+						conc_ena <= '0';
+						tmp_Ctr <= '0';
+						next_state <= round9;
+					
+					when round9 => 
+						in_sel <= "00";
+						compression_ena <= '1';
+						round_constant <= "0000000000000000000000000000000000000000000000000000000010001010";
+						out_ena <= '0';
+						mreg1_wr_ena <= '0';
+						mreg2_wr_ena <= '0';
+						tmpreg_wr_ena <= '0';
+						conc_ena <= '0';
+						tmp_Ctr <= '0';
+						next_state <= round10;
+					
+					when round10 => 
+						in_sel <= "00";
+						compression_ena <= '1';
+						round_constant <= "0000000000000000000000000000000000000000000000000000000010001000";
+						out_ena <= '0';
+						mreg1_wr_ena <= '0';
+						mreg2_wr_ena <= '0';
+						tmpreg_wr_ena <= '0';
+						conc_ena <= '0';
+						tmp_Ctr <= '0';
+						next_state <= round11;
+					
+					when round11 => 
+						in_sel <= "00";
+						compression_ena <= '1';
+						round_constant <= "0000000000000000000000000000000010000000000000001000000000001001";
+						out_ena <= '0';
+						mreg1_wr_ena <= '0';
+						mreg2_wr_ena <= '0';
+						tmpreg_wr_ena <= '0';
+						conc_ena <= '0';
+						tmp_Ctr <= '0';
+						next_state <= round12;
+					
+					when round12 => 
+						in_sel <= "00";
+						compression_ena <= '1';
+						round_constant <= "0000000000000000000000000000000010000000000000000000000000001010";
+						out_ena <= '0';
+						mreg1_wr_ena <= '0';
+						mreg2_wr_ena <= '0';
+						tmpreg_wr_ena <= '0';
+						conc_ena <= '0';
+						tmp_Ctr <= '0';
+						next_state <= round13;
+					
+					when round13 => 
+						in_sel <= "00";
+						compression_ena <= '1';
+						round_constant <= "0000000000000000000000000000000010000000000000001000000010001011";
+						out_ena <= '0';
+						mreg1_wr_ena <= '0';
+						mreg2_wr_ena <= '0';
+						tmpreg_wr_ena <= '0';
+						conc_ena <= '0';
+						tmp_Ctr <= '0';
+						next_state <= round14;
+					
+					when round14 => 
+						in_sel <= "00";
+						compression_ena <= '1';
+						round_constant <= "1000000000000000000000000000000000000000000000000000000010001011";
+						out_ena <= '0';
+						mreg1_wr_ena <= '0';
+						mreg2_wr_ena <= '0';
+						tmpreg_wr_ena <= '0';
+						conc_ena <= '0';
+						tmp_Ctr <= '0';
+						next_state <= round15;
+					
+					when round15 => 
+						in_sel <= "00";
+						compression_ena <= '1';
+						round_constant <= "1000000000000000000000000000000000000000000000001000000010001001";
+						out_ena <= '0';
+						mreg1_wr_ena <= '0';
+						mreg2_wr_ena <= '0';
+						tmpreg_wr_ena <= '0';
+						conc_ena <= '0';
+						tmp_Ctr <= '0';
+						next_state <= round16;
+					
+					when round16 => 
+						in_sel <= "00";
+						compression_ena <= '1';
+						round_constant <= "1000000000000000000000000000000000000000000000001000000000000011";
+						out_ena <= '0';
+						mreg1_wr_ena <= '0';
+						mreg2_wr_ena <= '0';
+						tmpreg_wr_ena <= '0';
+						conc_ena <= '0';
+						tmp_Ctr <= '0';
+						next_state <= round17;
+					
+					when round17 => 
+						in_sel <= "00";
+						compression_ena <= '1';
+						round_constant <= "1000000000000000000000000000000000000000000000001000000000000010";
+						out_ena <= '0';
+						mreg1_wr_ena <= '0';
+						mreg2_wr_ena <= '0';
+						tmpreg_wr_ena <= '0';
+						conc_ena <= '0';
+						tmp_Ctr <= '0';
+						next_state <= round18;
+					
+					when round18 => 
+						in_sel <= "00";
+						compression_ena <= '1';
+						round_constant <= "1000000000000000000000000000000000000000000000000000000010000000";
+						out_ena <= '0';
+						mreg1_wr_ena <= '0';
+						mreg2_wr_ena <= '0';
+						tmpreg_wr_ena <= '0';
+						conc_ena <= '0';
+						tmp_Ctr <= '0';
+						next_state <= round19;
+					
+					when round19 => 
+						in_sel <= "00";
+						compression_ena <= '1';
+						round_constant <= "0000000000000000000000000000000000000000000000001000000000001010";
+						out_ena <= '0';
+						mreg1_wr_ena <= '0';
+						mreg2_wr_ena <= '0';
+						tmpreg_wr_ena <= '0';
+						conc_ena <= '0';
+						tmp_Ctr <= '0';
+						next_state <= round20;
+					
+					when round20 => 
+						in_sel <= "00";
+						compression_ena <= '1';
+						round_constant <= "1000000000000000000000000000000010000000000000000000000000001010";
+						out_ena <= '0';
+						mreg1_wr_ena <= '0';
+						mreg2_wr_ena <= '0';
+						tmpreg_wr_ena <= '0';
+						conc_ena <= '0';
+						tmp_Ctr <= '0';
+						next_state <= round21;
+					
+					when round21 => 
+						in_sel <= "00";
+						compression_ena <= '1';
+						round_constant <= "1000000000000000000000000000000010000000000000001000000010000001";
+						out_ena <= '0';
+						mreg1_wr_ena <= '0';
+						mreg2_wr_ena <= '0';
+						tmpreg_wr_ena <= '0';
+						conc_ena <= '0';
+						tmp_Ctr <= '0';
+						next_state <= round22;
+					
+					when round22 => 
+						in_sel <= "00";
+						compression_ena <= '1';
+						round_constant <= "1000000000000000000000000000000000000000000000001000000010000000";
+						out_ena <= '0';
+						mreg1_wr_ena <= '0';
+						mreg2_wr_ena <= '0';
+						tmpreg_wr_ena <= '0';
+						conc_ena <= '0';
+						tmp_Ctr <= '0';
+						next_state <= round23;
+					
+					when round23 => 
+						in_sel <= "00";
+						compression_ena <= '1';
+						round_constant <= "0000000000000000000000000000000010000000000000000000000000000001";
+						out_ena <= '0';
+						mreg1_wr_ena <= '0';
+						mreg2_wr_ena <= '0';
+						tmpreg_wr_ena <= '0';
+						conc_ena <= '0';
+						tmp_Ctr <= '0';
+						next_state <= round24;
+					
+					when round24 => 
+						compression_ena <= '1';
+						in_sel <= "00";
+						round_constant <= "1000000000000000000000000000000010000000000000001000000000001000";
+						out_ena <= '0';
+						mreg1_wr_ena <= '0';
+						mreg2_wr_ena <= '0';
+						tmpreg_wr_ena <= '0';
+						conc_ena <= '0';
+						tmp_Ctr <= '0';
+						 
+						case transition is 
+							when "100000" | "111001" => 
+								next_state <= str_reg1;
+							when "110000" | "111101" | "111110" => 
+								next_state <= str_reg2;
+							when "110001" => 
+								next_state <= str_tmp;
+							when "111111" => 
+								next_state <= root;
+							when others => 
+								next_state <= init;
+						end case;
+						
+					when root => 
+						in_sel <= "XX";
+						compression_ena <= '0';
+						round_constant <= (others => 'X');
+						out_ena <= '1';
+						mreg1_wr_ena <= '0';
+						mreg2_wr_ena <= '0';
+						tmpreg_wr_ena <= '0';
+						conc_ena <= '0';
+						tmp_Ctr <= '0';
+						next_state <= init;
+				end case;
+		end process;
+		
+			
+		merkle_leaf <= std_logic_vector(trans_counter) & (32 to 127 => '0', 128 => '1', 129 to 1598 => '0', 1599 => '1'); 
+		
+		
+		mreg_1 : merkle_reg port map(sha_clk, mreg1_wr_ena, out_state(0 to 255), mreg1_out);
+		mreg_2 : merkle_reg port map(sha_clk, mreg2_wr_ena, out_state(0 to 255), mreg2_out);
+		tmp_reg : merkle_reg port map(sha_clk, tmpreg_wr_ena, out_state(0 to 255), tmp_reg_out);
+		
+		h1 <= mreg1_out(0 to 255) when(tmp_Ctr = '0') else tmp_reg_out;
+
+		
+		con : concat_unit port map(sha_clk, conc_ena, h1, mreg2_out, concat_out);
+		
+		with in_sel select
+			in_state <= out_state_reg when "00",
+						merkle_leaf when "01",
+						concat_out when others;
+		
+		
+		reg_upper : state_reg port map(sha_clk, in_state, in_state_reg);
+		
+		c : keccak_sponge_round port map(compression_ena, in_state_reg, round_constant, out_state);
+		
+		reg_lower : state_reg port map(sha_clk, out_state, out_state_reg);
+		
+		digest <= out_state_reg(0 to 255);
+		
+		
+		
+		process(sha_clk)
+			begin 
+				if(sha_clk'event and sha_clk = '1') then 
+					if(out_ena = '1') then 
+						digest_reg <= digest;
+					end if;
+				end if;
+		end process;
+		
+		
+		
+		g : for i in 0 to 63 generate 
+			lcd : lcd_decoder port map(digest_reg(i * 4 to i * 4 + 3), decoded_lcd(i * 8 to i * 8 + 7));
+		end generate;
+		
+		
+		
+		lcd_on <= is_lcd_on;
+		
+		
+		process(clk, pr_state_lcd)
+			variable counter : integer range 0 to 50_000_000;
+			variable freq_ctr : integer range 0 to 2000;
+			begin
+				freq_ctr := 1000;
+				if(pr_state_lcd = shift) then 	
+					freq_ctr := 10;
+				end if;
+				if(clk'event and clk = '1') then
+					if(counter = 50_000_000 / freq_ctr) then
+						if(pause = '1') then
+							E <= 'Z';
+						else E <= not E;
+						end if;
+						counter := 0;
+					else counter := counter + 1;
+					end if;
+				end if;
+		end process;	
+
+
+		process(clk)
+			variable counter : integer range 0 to 50_000_000;
+			begin
+				if(clk'event and clk = '1') then
+					if(counter = 50_000_000 / 6000) then
+						sha_clk <= not sha_clk;
+						counter := 0;
+					else counter := counter + 1;
+					end if;
+				end if;
+		end process;	
+				
+		
+		
+		process(E, reset)
+			begin
+				if(reset = '1') then 
+					pr_state_lcd <= function_set;
+				elsif(E'event and E = '1') then 
+					pr_state_lcd <= next_state_lcd;
+				end if;
+		end process;	
+		
+		
+		
+		process(pr_state_lcd, decoded_lcd_fifo, lcd_counter, show_lcd)
+			begin
+				case pr_state_lcd is 
+					when function_set => 
+						DB <= "0000111000";
+						next_state_lcd <= display_ctrl;
+					
+					when display_ctrl =>
+						DB <= "0000001110";
+						next_state_lcd <= entry_mode;
+					
+					when entry_mode =>
+						DB <= "0000000110";
+						next_state_lcd <= clear;
+					
+					when clear =>
+						DB <= "0000000001";
+						if(show_lcd = '1') then
+							next_state_lcd <= write_init0;
+						else next_state_lcd <= clear;
+						end if;
+					
+					when write_init0 =>
+						db <= "10" & "01001101";
+						next_state_lcd <= write_init1;
+
+					when write_init1 =>
+						db <= "10" & "01000101";
+						next_state_lcd <= write_init2;
+
+					when write_init2 =>
+						db <= "10" & "01010010";
+						next_state_lcd <= write_init3;
+
+					when write_init3 =>
+						db <= "10" & "01001011";
+						next_state_lcd <= write_init4;
+
+					when write_init4 =>
+						db <= "10" & "01001100";
+						next_state_lcd <= write_init5;
+
+					when write_init5 =>
+						db <= "10" & "01000101";
+						next_state_lcd <= write_init6;
+
+					when write_init6 =>
+						db <= "10" & "00100000";
+						next_state_lcd <= write_init7;
+
+					when write_init7 =>
+						db <= "10" & "01010010";
+						next_state_lcd <= write_init8;
+
+					when write_init8 =>
+						db <= "10" & "01001111";
+						next_state_lcd <= write_init9;
+
+					when write_init9 =>
+						db <= "10" & "01001111";
+						next_state_lcd <= write_init10;
+
+					when write_init10 =>
+						db <= "10" & "01010100";
+						next_state_lcd <= write_init11;
+
+					when write_init11 =>
+						db <= "10" & "00111010";
+						next_state_lcd <= write_data;
+					
+					when write_data => 
+						db <= "10" & decoded_lcd_fifo(0 to 7);
+						if(lcd_counter = 63) then 
+							next_state_lcd <= shift;
+						else next_state_lcd <= write_data;
+						end if;
+					
+					when shift => 
+						db <= "0000011000";
+						if(show_lcd = '1') then 
+							next_state_lcd <= shift;
+						else next_state_lcd <= clear;
+						end if;
+				end case;
+		end process;	
+		
+
+
+		process(E)
+			begin 
+				if(E'event and E = '1') then 
+					if(lcd_counter = "01111111") then
+						lcd_counter <= "00000000";
+						decoded_lcd_fifo <= decoded_lcd;
+					else 
+						lcd_counter <= lcd_counter + 1;
+						decoded_lcd_fifo <= decoded_lcd_fifo(8 to 511) & decoded_lcd_fifo(0 to 7);
+					end if;
+				end if;
+		end process;
+				
+					
+		
+		process(root_counter)
+			begin 
+				case root_counter(3 downto 0) is
+					when "0000" => hex_0 <= not "0111111";
+					when "0001" => hex_0 <= not "0000110";
+					when "0010" => hex_0 <= not "1011011";
+					when "0011" => hex_0 <= not "1001111";
+					when "0100" => hex_0 <= not "1100110";
+					when "0101" => hex_0 <= not "1101101";
+					when "0110" => hex_0 <= not "1111101";
+					when "0111" => hex_0 <= not "0000111";
+					when "1000" => hex_0 <= not "1111111";
+					when "1001" => hex_0 <= not "1101111";
+					when "1010" => hex_0 <= not "1110111";
+					when "1011" => hex_0 <= not "1111100";
+					when "1100" => hex_0 <= not "0111001";
+					when "1101" => hex_0 <= not "1011110";
+					when "1110" => hex_0 <= not "1111001";
+					when "1111" => hex_0 <= not "1110001";
+					when others => hex_0 <= not "0000000";
+				end case;
+		end process;
+		
+		
+		process(root_counter)
+			begin 
+				case root_counter(7 downto 4) is
+					when "0000" => hex_1 <= not "0111111";
+					when "0001" => hex_1 <= not "0000110";
+					when "0010" => hex_1 <= not "1011011";
+					when "0011" => hex_1 <= not "1001111";
+					when "0100" => hex_1 <= not "1100110";
+					when "0101" => hex_1 <= not "1101101";
+					when "0110" => hex_1 <= not "1111101";
+					when "0111" => hex_1 <= not "0000111";
+					when "1000" => hex_1 <= not "1111111";
+					when "1001" => hex_1 <= not "1101111";
+					when "1010" => hex_1 <= not "1110111";
+					when "1011" => hex_1 <= not "1111100";
+					when "1100" => hex_1 <= not "0111001";
+					when "1101" => hex_1 <= not "1011110";
+					when "1110" => hex_1 <= not "1111001";
+					when "1111" => hex_1 <= not "1110001";
+					when others => hex_1 <= not "0000000";
+				end case;
+		end process;
+		
+		
+		process(root_counter)
+			begin 
+				case root_counter(11 downto 8) is
+					when "0000" => hex_2 <= not "0111111";
+					when "0001" => hex_2 <= not "0000110";
+					when "0010" => hex_2 <= not "1011011";
+					when "0011" => hex_2 <= not "1001111";
+					when "0100" => hex_2 <= not "1100110";
+					when "0101" => hex_2 <= not "1101101";
+					when "0110" => hex_2 <= not "1111101";
+					when "0111" => hex_2 <= not "0000111";
+					when "1000" => hex_2 <= not "1111111";
+					when "1001" => hex_2 <= not "1101111";
+					when "1010" => hex_2 <= not "1110111";
+					when "1011" => hex_2 <= not "1111100";
+					when "1100" => hex_2 <= not "0111001";
+					when "1101" => hex_2 <= not "1011110";
+					when "1110" => hex_2 <= not "1111001";
+					when "1111" => hex_2 <= not "1110001";
+					when others => hex_2 <= not "0000000";
+				end case;
+		end process;
+		
+		
+		process(root_counter)
+			begin 
+				case root_counter(15 downto 12) is
+					when "0000" => hex_3 <= not "0111111";
+					when "0001" => hex_3 <= not "0000110";
+					when "0010" => hex_3 <= not "1011011";
+					when "0011" => hex_3 <= not "1001111";
+					when "0100" => hex_3 <= not "1100110";
+					when "0101" => hex_3 <= not "1101101";
+					when "0110" => hex_3 <= not "1111101";
+					when "0111" => hex_3 <= not "0000111";
+					when "1000" => hex_3 <= not "1111111";
+					when "1001" => hex_3 <= not "1101111";
+					when "1010" => hex_3 <= not "1110111";
+					when "1011" => hex_3 <= not "1111100";
+					when "1100" => hex_3 <= not "0111001";
+					when "1101" => hex_3 <= not "1011110";
+					when "1110" => hex_3 <= not "1111001";
+					when "1111" => hex_3 <= not "1110001";
+					when others => hex_3 <= not "0000000";
+				end case;
+		end process;
+		
+		
+		
+		process(sha_clk)
+			begin 
+				if(sha_clk'event and sha_clk = '1') then
+					if(sync_reset = '1') then 
+						root_counter <= (others => '0');	
+					elsif(pr_state = root) then
+						if(root_counter = "1111111111111111") then 
+							root_counter <= (others => '0');
+						else root_counter <= root_counter + 1;
+						end if;
+					end if;
+				end if;
+		end process;
+				
+					
+					
+		outp <= digest_reg(0 to 25);
+		
+end;

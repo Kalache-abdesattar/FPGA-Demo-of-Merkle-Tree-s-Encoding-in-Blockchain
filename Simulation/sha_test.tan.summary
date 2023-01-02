@@ -1,0 +1,56 @@
+--------------------------------------------------------------------------------------
+Timing Analyzer Summary
+--------------------------------------------------------------------------------------
+
+Type           : Worst-case tsu
+Slack          : N/A
+Required Time  : None
+Actual Time    : 3.346 ns
+From           : sync_reset
+To             : keccak_sponge_round:c|out_state~1866_OTERM5
+From Clock     : --
+To Clock       : sha_clk
+Failed Paths   : 0
+
+Type           : Worst-case tco
+Slack          : N/A
+Required Time  : None
+Actual Time    : 11.562 ns
+From           : pr_state.root
+To             : out_data[165]
+From Clock     : sha_clk
+To Clock       : --
+Failed Paths   : 0
+
+Type           : Worst-case th
+Slack          : N/A
+Required Time  : None
+Actual Time    : -0.867 ns
+From           : sync_reset
+To             : pr_state.load_t4
+From Clock     : --
+To Clock       : sha_clk
+Failed Paths   : 0
+
+Type           : Clock Setup: 'sha_clk'
+Slack          : N/A
+Required Time  : None
+Actual Time    : 165.15 MHz ( period = 6.055 ns )
+From           : pr_state.init
+To             : keccak_sponge_round:c|theta_lanes[27]~191_OTERM7485
+From Clock     : sha_clk
+To Clock       : sha_clk
+Failed Paths   : 0
+
+Type           : Total number of failed paths
+Slack          : 
+Required Time  : 
+Actual Time    : 
+From           : 
+To             : 
+From Clock     : 
+To Clock       : 
+Failed Paths   : 0
+
+--------------------------------------------------------------------------------------
+
